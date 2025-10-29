@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 120  # 2小时
     JWT_REFRESH_EXPIRE_MINUTES: int = 60 * 24 * 7  # refresh token 7天
     
+    
     # 微信小程序配置 - 云托管环境自动注入
     WECHAT_APP_ID: str = Field(default="", description="微信小程序AppID")
     WECHAT_APP_SECRET: str = Field(default="", description="微信小程序AppSecret")
@@ -49,6 +50,28 @@ class Settings(BaseSettings):
     # 分页配置
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
+    
+    # 通知系统配置
+    NOTIFICATION_ENABLED: bool = Field(default=True, description="是否启用通知系统")
+    NOTIFICATION_MAX_RETRIES: int = Field(default=3, description="通知最大重试次数")
+    NOTIFICATION_RETRY_DELAY_MINUTES: int = Field(default=5, description="通知重试延迟（分钟）")
+    NOTIFICATION_CLEANUP_DAYS: int = Field(default=30, description="通知记录保留天数")
+    
+    # 任务调度配置
+    SCHEDULER_ENABLED: bool = Field(default=True, description="是否启用任务调度器")
+    SCHEDULER_TIMEZONE: str = Field(default="Asia/Shanghai", description="调度器时区")
+    SCHEDULER_JOB_DEFAULTS_COALESCE: bool = Field(default=True, description="是否合并相同任务")
+    SCHEDULER_JOB_DEFAULTS_MAX_INSTANCES: int = Field(default=3, description="任务最大并发实例数")
+    
+    # 预订提醒配置
+    BOOKING_REMINDER_ENABLED: bool = Field(default=True, description="是否启用预订提醒")
+    BOOKING_REMINDER_ADVANCE_HOURS: int = Field(default=1, description="预订提前提醒小时数")
+    BOOKING_REMINDER_TEMPLATE_ID: str = Field(default="", description="预订提醒微信模板ID")
+    
+    # 微信订阅消息配置
+    WECHAT_BOOKING_REMINDER_TEMPLATE: str = Field(default="", description="预订提醒模板ID")
+    WECHAT_BOOKING_EXPIRED_TEMPLATE: str = Field(default="", description="预订到期模板ID")
+    WECHAT_BOOKING_CANCELLED_TEMPLATE: str = Field(default="", description="预订取消模板ID")
     
     @property
     def database_url(self) -> str:

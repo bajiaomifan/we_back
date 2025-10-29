@@ -133,6 +133,34 @@ class BookingService:
             
             self.db.commit()
             
+            # 安排预订提醒任务
+            try:
+                from app.services.task_scheduler_service import TaskSchedulerService
+                from app.config import settings
+                
+                if settings.BOOKING_REMINDER_ENABLED:
+                    # 计算提醒时间（预订结束前1小时）
+                    end_time = datetime.fromtimestamp(booking.end_time)
+                    reminder_time = end_time - timedelta(hours=settings.BOOKING_REMINDER_ADVANCE_HOURS)
+                    
+                    # 只有当提醒时间在未来时才安排任务
+                    if reminder_time > datetime.now():
+                        task_scheduler = TaskSchedulerService(self.db)
+                        success = task_scheduler.schedule_booking_reminder(
+                            booking_id=booking.id,
+                            reminder_time=reminder_time
+                        )
+                        
+                        if success:
+                            print(f"成功安排预订提醒: 预订ID {booking.id}, 提醒时间 {reminder_time}")
+                        else:
+                            print(f"安排预订提醒失败: 预订ID {booking.id}")
+                    else:
+                        print(f"预订时间已过，跳过提醒安排: 预订ID {booking.id}")
+                        
+            except Exception as e:
+                print(f"安排预订提醒时出错: {str(e)}")
+            
             print(f"成功创建预订: 预订ID {booking.id}, 支付订单ID {payment_order.id}, 商户订单号 {out_trade_no}")
             
             return {
@@ -393,16 +421,30 @@ class BookingService:
     
     def cancel_booking(self, booking_id: int, user_id: int) -> Dict[str, Any]:
         """取消预订"""
-        booking = self.get_booking(booking_id, user_id)
+        # 查询数据库中的预订对象
+        db_booking = self.db.query(Booking).filter(
+            and_(Booking.id == booking_id, Booking.user_id == user_id)
+        ).first()
+        
+        if not db_booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="预订不存在"
+            )
+        
+        print(f"[DEBUG] cancel_booking - booking.id: {db_booking.id}, current status: '{db_booking.status}', type: {type(db_booking.status)}")
         
         # 只能取消待确认的预订
-        if booking.status != BookingStatusEnum.PENDING:
+        if db_booking.status != BookingStatusEnum.PENDING.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="只能取消待确认的预订"
             )
         
-        booking.status = BookingStatusEnum.CANCELLED
+        # 更新数据库中的状态
+        db_booking.status = BookingStatusEnum.CANCELLED.value
+        print(f"[DEBUG] cancel_booking - updated status to: '{db_booking.status}'")
+        
         self.db.commit()
         
         return {

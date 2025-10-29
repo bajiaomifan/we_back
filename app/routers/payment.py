@@ -20,7 +20,7 @@ from app.middleware.auth import get_current_user, get_client_ip
 router = APIRouter(prefix="/payment", tags=["微信支付"])
 
 
-@router.post("/getOpenid", response_model=GetOpenidResponse)
+@router.post("/getOpenid", response_model=APIResponse)
 async def get_openid(
     request_data: GetOpenidRequest,
     db: Session = Depends(get_db)
@@ -34,12 +34,17 @@ async def get_openid(
         payment_service = PaymentService(db)
         result = await payment_service.get_openid_by_code(request_data.code)
         
-        return GetOpenidResponse(**result)
+        return APIResponse(
+            code=0,
+            message="success",
+            data=result
+        )
         
     except Exception as e:
-        return GetOpenidResponse(
-            errcode=-1,
-            errmsg=str(e)
+        return APIResponse(
+            code=-1,
+            message=str(e),
+            data=None
         )
 
 
