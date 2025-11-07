@@ -1,10 +1,10 @@
 # app/routers/rooms.py
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 import httpx
 
-from app.models.database import get_db
+from app.models.database import get_db, User
 from app.models.schemas import (
     StoreResponse, RoomResponse, RoomListResponse, RoomFilterParams,
     AvailabilityResponse, PaginationParams, APIResponse,
@@ -12,6 +12,11 @@ from app.models.schemas import (
     DoorOpenRequest, DoorOpenResponse
 )
 from app.services.room_service import RoomService
+from app.services.booking_service import BookingService
+from app.middleware.auth import get_current_user, get_client_ip
+from app.services.user_service import UserService
+from app.services.task_scheduler import task_scheduler
+from datetime import datetime, timedelta
 
 router = APIRouter(
     prefix="/api/v1/rooms",
@@ -180,10 +185,68 @@ async def get_room_reviews(
 @router.post("/doors", response_model=DoorOpenResponse)
 async def open_door(
     request: DoorOpenRequest,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """发送开门指令到外部设备"""
+    """发送开门指令到外部设备
+    
+    需要用户身份验证和有效预订才能开门。用户只能在预订时间前1小时内到预订结束时间内开门。
+    
+    Args:
+        request: 开门请求，包含门ID
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        DoorOpenResponse: 开门操作响应
+    
+    Raises:
+        HTTPException: 当用户无有效预订或超过时间限制时返回403错误
+        HTTPException: 当外部设备通信失败时返回502错误
+        HTTPException: 当服务器内部错误时返回500错误
+    """
     try:
+        # 验证用户开门权限
+        booking_service = BookingService(db)
+        validation_result = booking_service.validate_door_access(current_user.id, request.door_id)
+        
+        if not validation_result['valid']:
+            # 记录失败的开门尝试
+            user_service = UserService(db)
+            user_service.create_audit_log(
+                user_id=current_user.id,
+                action="door_access_denied",
+                resource_type="door",
+                resource_id=str(request.door_id),
+                description=f"开门被拒绝: {validation_result['message']}",
+                ip_address=get_client_ip(http_request)
+            )
+            
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=validation_result['message']
+            )
+        
+        # 调度自动关电任务
+        booking_info = validation_result['booking']
+        if booking_info:
+            # 计算关电时间：预订结束时间 + 40分钟缓冲
+            booking_end_time = datetime.fromtimestamp(booking_info['end_time'])
+            power_off_time = booking_end_time + timedelta(minutes=40)
+            
+            # 调度关电任务
+            try:
+                job_id = task_scheduler.schedule_power_off(
+                    booking_id=booking_info['id'],
+                    room_id=request.door_id,
+                    power_off_time=power_off_time
+                )
+                print(f"已调度自动关电任务: {job_id}, 执行时间: {power_off_time}")
+            except Exception as e:
+                print(f"调度关电任务失败: {e}")
+                # 不影响开门操作，只记录错误
+        
         # 首先发送门关闭请求
         door_off_url = f"https://3e.upon.ltd/relays/{request.door_id}/off"
         async with httpx.AsyncClient() as client:
@@ -234,6 +297,17 @@ async def open_door(
                 except httpx.HTTPError as e:
                     # 网关状态检查或开启失败，记录错误但继续返回门关闭响应
                     print(f"网关操作失败: {str(e)}")
+            
+            # 记录成功的开门操作
+            user_service = UserService(db)
+            user_service.create_audit_log(
+                user_id=current_user.id,
+                action="door_opened",
+                resource_type="door",
+                resource_id=str(request.door_id),
+                description=f"用户 {current_user.nickname} 成功开启门 {request.door_id}",
+                ip_address=get_client_ip(http_request)
+            )
             
             return DoorOpenResponse(**door_result)
             

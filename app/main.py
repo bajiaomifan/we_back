@@ -8,13 +8,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import uvicorn
 import os
 from app.config import settings
-from app.routers import users, payment, rooms, bookings, reviews, recharge, notification
+from app.routers import users, payment, rooms, bookings, reviews, power_off
 from app.models.database import create_tables
-from app.utils.exceptions import BusinessException
-from app.utils.logging import setup_logging
-
-# 初始化日志系统
-setup_logging()
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -28,9 +23,9 @@ app = FastAPI(
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 在生产环境中应该设置具体的域名
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -57,8 +52,7 @@ app.include_router(payment.router, prefix="/api/v1")
 app.include_router(rooms.router)
 app.include_router(bookings.router)
 app.include_router(reviews.router)
-app.include_router(recharge.router)
-app.include_router(notification.router, prefix="/api/v1")
+app.include_router(power_off.router)
 
 # 添加调试路由信息
 @app.on_event("startup")
@@ -71,13 +65,9 @@ async def log_routes():
             print(f"路径: {route.path}, 方法: {list(route.methods)}, 名称: {route.name}")
     print("==================")
 
-# 全局变量存储调度器实例
-task_scheduler = None
-
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
-    global task_scheduler
     try:
         # 创建数据库表
         create_tables()
@@ -88,17 +78,10 @@ async def startup_event():
         init_room_sample_data()
         print("✅ 棋牌室示例数据初始化完成")
         
-        # 初始化任务调度器
-        from app.models.database import SessionLocal
-        from app.services.task_scheduler_service import TaskSchedulerService
-        
-        db = SessionLocal()
-        try:
-            task_scheduler = TaskSchedulerService(db)
-            task_scheduler.start()
-            print("✅ 任务调度器启动成功")
-        finally:
-            db.close()
+        # 启动任务调度器
+        from app.services.task_scheduler import task_scheduler
+        task_scheduler.start()
+        print("✅ 任务调度器启动成功")
         
         print("🚀 应用启动成功，所有功能模块已就绪")
     except Exception as e:
@@ -109,13 +92,13 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭事件"""
-    global task_scheduler
     try:
-        if task_scheduler:
-            task_scheduler.stop()
-            print("✅ 任务调度器已停止")
+        # 关闭任务调度器
+        from app.services.task_scheduler import task_scheduler
+        task_scheduler.shutdown()
+        print("✅ 任务调度器已关闭")
     except Exception as e:
-        print(f"⚠️ 停止任务调度器时出现错误: {str(e)}")
+        print(f"⚠️ 关闭任务调度器时出现错误: {str(e)}")
     finally:
         print("应用关闭")
 
@@ -145,26 +128,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-@app.exception_handler(BusinessException)
-async def business_exception_handler(request: Request, exc: BusinessException):
-    """业务异常处理器"""
-    return JSONResponse(
-        status_code=exc.code,
-        content={
-            "code": exc.code,
-            "message": exc.message,
-            "data": exc.data
-        }
-    )
-
-
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """通用异常处理器"""
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
     return JSONResponse(
         status_code=500,
         content={

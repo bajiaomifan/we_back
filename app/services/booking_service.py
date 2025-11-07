@@ -133,34 +133,6 @@ class BookingService:
             
             self.db.commit()
             
-            # 安排预订提醒任务
-            try:
-                from app.services.task_scheduler_service import TaskSchedulerService
-                from app.config import settings
-                
-                if settings.BOOKING_REMINDER_ENABLED:
-                    # 计算提醒时间（预订结束前1小时）
-                    end_time = datetime.fromtimestamp(booking.end_time)
-                    reminder_time = end_time - timedelta(hours=settings.BOOKING_REMINDER_ADVANCE_HOURS)
-                    
-                    # 只有当提醒时间在未来时才安排任务
-                    if reminder_time > datetime.now():
-                        task_scheduler = TaskSchedulerService(self.db)
-                        success = task_scheduler.schedule_booking_reminder(
-                            booking_id=booking.id,
-                            reminder_time=reminder_time
-                        )
-                        
-                        if success:
-                            print(f"成功安排预订提醒: 预订ID {booking.id}, 提醒时间 {reminder_time}")
-                        else:
-                            print(f"安排预订提醒失败: 预订ID {booking.id}")
-                    else:
-                        print(f"预订时间已过，跳过提醒安排: 预订ID {booking.id}")
-                        
-            except Exception as e:
-                print(f"安排预订提醒时出错: {str(e)}")
-            
             print(f"成功创建预订: 预订ID {booking.id}, 支付订单ID {payment_order.id}, 商户订单号 {out_trade_no}")
             
             return {
@@ -421,30 +393,16 @@ class BookingService:
     
     def cancel_booking(self, booking_id: int, user_id: int) -> Dict[str, Any]:
         """取消预订"""
-        # 查询数据库中的预订对象
-        db_booking = self.db.query(Booking).filter(
-            and_(Booking.id == booking_id, Booking.user_id == user_id)
-        ).first()
-        
-        if not db_booking:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="预订不存在"
-            )
-        
-        print(f"[DEBUG] cancel_booking - booking.id: {db_booking.id}, current status: '{db_booking.status}', type: {type(db_booking.status)}")
+        booking = self.get_booking(booking_id, user_id)
         
         # 只能取消待确认的预订
-        if db_booking.status != BookingStatusEnum.PENDING.value:
+        if booking.status != BookingStatusEnum.PENDING:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="只能取消待确认的预订"
             )
         
-        # 更新数据库中的状态
-        db_booking.status = BookingStatusEnum.CANCELLED.value
-        print(f"[DEBUG] cancel_booking - updated status to: '{db_booking.status}'")
-        
+        booking.status = BookingStatusEnum.CANCELLED
         self.db.commit()
         
         return {
@@ -541,6 +499,68 @@ class BookingService:
             and_(Booking.id == booking_id, Booking.user_id == user_id)
         ).first()
     
+    def validate_door_access(self, user_id: int, door_id: int) -> Dict[str, Any]:
+        """验证用户是否有开门权限"""
+        try:
+            current_time = datetime.now()
+            
+            # 查找用户当前有效的预订
+            # 需要关联Room表来检查门ID与房间的对应关系
+            current_timestamp = int(current_time.timestamp())
+            one_hour_later_timestamp = int((current_time + timedelta(hours=1)).timestamp())
+            
+            valid_booking = self.db.query(Booking).join(Room).filter(
+                and_(
+                    Booking.user_id == user_id,
+                    Booking.status == BookingStatusEnum.CONFIRMED,
+                    # 检查时间窗口：当前时间在预订时间前1小时到预订结束时间之间
+                    Booking.start_time <= one_hour_later_timestamp,
+                    Booking.end_time >= current_timestamp,
+                    # 这里假设门ID与房间ID有对应关系，或者需要额外的映射表
+                    # 暂时使用简单的ID匹配，实际可能需要更复杂的逻辑
+                    Room.id == door_id  # 或者根据实际的门-房间映射关系调整
+                )
+            ).first()
+            
+            if not valid_booking:
+                return {
+                    'valid': False,
+                    'reason': 'no_booking',
+                    'message': '您当前没有有效预订，无法开门'
+                }
+            
+            # 检查是否超过1小时提前时间限制
+            booking_start_time = datetime.fromtimestamp(valid_booking.start_time)
+            if current_time < booking_start_time - timedelta(hours=1):
+                return {
+                    'valid': False,
+                    'reason': 'too_early',
+                    'message': '距离预订时间超过1小时，无法开门'
+                }
+            
+            # 检查预订是否已过期
+            booking_end_time = datetime.fromtimestamp(valid_booking.end_time)
+            if current_time > booking_end_time:
+                return {
+                    'valid': False,
+                    'reason': 'expired',
+                    'message': '您的预订已过期，无法开门'
+                }
+            
+            return {
+                'valid': True,
+                'booking': valid_booking,
+                'message': '验证通过，可以开门'
+            }
+            
+        except Exception as e:
+            logger.error(f"验证开门权限失败: {str(e)}")
+            return {
+                'valid': False,
+                'reason': 'error',
+                'message': '验证开门权限时发生错误'
+            }
+
     def update_booking_status(self, booking_id: int, new_status: BookingStatusEnum) -> Dict[str, Any]:
         """更新预订状态（管理员功能）"""
         booking = self.db.query(Booking).filter(Booking.id == booking_id).first()

@@ -805,117 +805,78 @@ class DoorOpenResponse(BaseModel):
     status: str = Field(..., description="状态")
 
 
-# 充值相关模型
-class RechargeStatusEnum(str, Enum):
-    """充值状态枚举"""
-    PENDING = "pending"          # 待支付
-    PAID = "paid"               # 已支付
-    FAILED = "failed"           # 支付失败
-    CANCELLED = "cancelled"     # 已取消
+# ==================== Power-off Task Models ====================
+
+class PowerOffTaskStatusEnum(str, Enum):
+    """关电任务状态枚举"""
+    PENDING = "pending"          # 待执行
+    SCHEDULED = "scheduled"      # 已调度
+    COMPLETED = "completed"      # 已完成
+    FAILED = "failed"           # 执行失败
+    CANCELLED = "cancelled"      # 已取消
 
 
-class TransactionTypeEnum(str, Enum):
-    """交易类型枚举"""
-    RECHARGE = "recharge"       # 充值
-    CONSUME = "consume"         # 消费
-    REFUND = "refund"           # 退款
+class PowerOffTaskCreate(BaseModel):
+    """创建关电任务模型"""
+    booking_id: int = Field(..., description="预订ID")
+    room_id: int = Field(..., description="房间ID")
+    scheduled_time: datetime = Field(..., description="计划执行时间")
+    status: PowerOffTaskStatusEnum = Field(default=PowerOffTaskStatusEnum.PENDING, description="任务状态")
 
 
-class RechargeActivityResponse(BaseModel):
-    """充值活动响应模型"""
+class PowerOffTask(BaseModel):
+    """关电任务响应模型"""
     id: int
-    title: str
-    description: Optional[str]
-    recharge_amount: int = Field(..., description="充值金额（分）")
-    bonus_amount: int = Field(..., description="赠送金额（分）")
-    is_active: bool
-    sort_order: int
-    start_time: Optional[datetime]
-    end_time: Optional[datetime]
-    created_at: datetime
+    booking_id: int
+    room_id: int
+    scheduled_time: str
+    executed_at: Optional[str]
+    status: PowerOffTaskStatusEnum
+    created_at: str
+    updated_at: str
+    
+    @validator('scheduled_time', 'executed_at', 'created_at', 'updated_at', pre=True)
+    def convert_datetime_to_iso(cls, v):
+        """将datetime对象转换为ISO格式字符串"""
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
     
     class Config:
         from_attributes = True
 
 
-class RechargeActivityListResponse(BaseModel):
-    """充值活动列表响应模型"""
-    code: int = Field(default=0, description="状态码")
-    message: str = Field(default="success", description="消息")
-    data: List[RechargeActivityResponse] = Field(description="充值活动列表")
+class PowerOffTaskListResponse(BaseModel):
+    """关电任务列表响应模型"""
+    tasks: List[PowerOffTask]
+    total: int
+    page: int
+    size: int
+    pages: int
 
 
-class RechargeCreate(BaseModel):
-    """创建充值订单模型"""
-    amount: int = Field(..., gt=0, description="充值金额（分）")
-    activity_id: Optional[int] = Field(None, description="充值活动ID")
-    description: Optional[str] = Field(None, max_length=255, description="充值说明")
-
-
-class RechargeResponse(BaseModel):
-    """充值订单响应模型"""
+class PowerOffAuditLogResponse(BaseModel):
+    """关电审计日志响应模型"""
     id: int
-    order_no: str
-    amount: int = Field(..., description="充值金额（分）")
-    bonus_amount: int = Field(..., description="赠送金额（分）")
-    total_amount: int = Field(..., description="到账总额（分）")
-    status: str
-    payment_method: Optional[str]
-    description: Optional[str]
-    created_at: datetime
-    paid_at: Optional[datetime]
+    booking_id: int
+    room_id: int
+    operation_type: str
+    result: str
+    details: str
+    created_at: str
+    
+    @validator('created_at', pre=True)
+    def convert_datetime_to_iso(cls, v):
+        """将datetime对象转换为ISO格式字符串"""
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
     
     class Config:
         from_attributes = True
 
 
-class RechargeListResponse(BaseModel):
-    """充值订单列表响应模型"""
-    code: int = Field(default=0, description="状态码")
-    message: str = Field(default="success", description="消息")
-    data: List[RechargeResponse] = Field(description="充值订单列表")
-    pagination: Optional[dict] = Field(None, description="分页信息")
-
-
-class RechargeFilterParams(BaseModel):
-    """充值订单过滤参数模型"""
-    status: Optional[str] = Field(None, description="充值状态")
-    start_date: Optional[datetime] = Field(None, description="开始日期")
-    end_date: Optional[datetime] = Field(None, description="结束日期")
-
-
-class BalanceTransactionResponse(BaseModel):
-    """余额变动记录响应模型"""
-    id: int
-    transaction_type: str
-    amount: int = Field(..., description="变动金额（分）")
-    balance_before: int = Field(..., description="变动前余额（分）")
-    balance_after: int = Field(..., description="变动后余额（分）")
-    related_type: Optional[str]
-    related_id: Optional[int]
-    description: Optional[str]
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
-
-
-class BalanceTransactionListResponse(BaseModel):
-    """余额变动记录列表响应模型"""
-    code: int = Field(default=0, description="状态码")
-    message: str = Field(default="success", description="消息")
-    data: List[BalanceTransactionResponse] = Field(description="余额变动记录列表")
-    pagination: Optional[dict] = Field(None, description="分页信息")
-
-
-class BalanceTransactionFilterParams(BaseModel):
-    """余额变动记录过滤参数模型"""
-    transaction_type: Optional[str] = Field(None, description="交易类型")
-    start_date: Optional[datetime] = Field(None, description="开始日期")
-    end_date: Optional[datetime] = Field(None, description="结束日期")
-
-
-class UserBalanceResponse(BaseModel):
-    """用户余额响应模型"""
-    balance: int = Field(..., description="当前余额（分）")
-    total_recharge: int = Field(..., description="累计充值金额（分）")
+class PowerOffAuditLogListResponse(BaseModel):
+    """关电审计日志列表响应模型"""
+    logs: List[PowerOffAuditLogResponse]
+    total: int

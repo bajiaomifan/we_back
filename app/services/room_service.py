@@ -147,9 +147,9 @@ class RoomService:
             )
         ).all()
         
-        # 生成时间段列表（9:00-23:00）
+        # 生成时间段列表（全天24小时营业）
         time_slots = []
-        for hour in range(9, 23):
+        for hour in range(0, 24):
             time_str = f"{hour:02d}:00"
             
             # 检查这个时间段是否被预订

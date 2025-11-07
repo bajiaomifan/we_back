@@ -57,8 +57,6 @@ class User(Base):
     province: Mapped[Optional[str]] = mapped_column(String(50), comment="省份")
     city: Mapped[Optional[str]] = mapped_column(String(50), comment="城市")
     language: Mapped[Optional[str]] = mapped_column(String(20), comment="语言")
-    balance: Mapped[int] = mapped_column(Integer, default=0, comment="用户余额（分）")
-    total_recharge: Mapped[int] = mapped_column(Integer, default=0, comment="累计充值金额（分）")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否激活")
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否删除")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
@@ -153,93 +151,6 @@ class PaymentOrder(Base):
         Index('idx_payment_transaction_id', 'transaction_id'),
         Index('idx_payment_status', 'status'),
         Index('idx_payment_created_at', 'created_at'),
-    )
-
-
-class RechargeOrder(Base):
-    """充值订单表"""
-    __tablename__ = "recharge_orders"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="充值订单ID")
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, comment="用户ID")
-    openid: Mapped[str] = mapped_column(String(64), nullable=False, comment="用户openid")
-    order_no: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, comment="充值订单号")
-    amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="充值金额（分）")
-    bonus_amount: Mapped[int] = mapped_column(Integer, default=0, comment="赠送金额（分）")
-    total_amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="到账总额（分）")
-    status: Mapped[str] = mapped_column(String(20), default="pending", comment="充值状态")
-    payment_method: Mapped[Optional[str]] = mapped_column(String(20), comment="支付方式")
-    payment_order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("payment_orders.id"), comment="关联的支付订单ID")
-    transaction_id: Mapped[Optional[str]] = mapped_column(String(32), comment="微信支付订单号")
-    prepay_id: Mapped[Optional[str]] = mapped_column(String(64), comment="预支付交易会话标识")
-    description: Mapped[Optional[str]] = mapped_column(String(255), comment="充值说明")
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), comment="客户端IP")
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否删除")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")
-    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="支付完成时间")
-    
-    # 关系
-    user = relationship("User", backref="recharge_orders")
-    payment_order = relationship("PaymentOrder", backref="recharge_orders")
-    
-    # 创建索引
-    __table_args__ = (
-        Index('idx_recharge_user_id', 'user_id'),
-        Index('idx_recharge_order_no', 'order_no'),
-        Index('idx_recharge_status', 'status'),
-        Index('idx_recharge_created_at', 'created_at'),
-        Index('idx_recharge_deleted', 'is_deleted'),
-    )
-
-
-class RechargeActivity(Base):
-    """充值活动表"""
-    __tablename__ = "recharge_activities"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="活动ID")
-    title: Mapped[str] = mapped_column(String(100), nullable=False, comment="活动标题")
-    description: Mapped[Optional[str]] = mapped_column(Text, comment="活动描述")
-    recharge_amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="充值金额（分）")
-    bonus_amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="赠送金额（分）")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, comment="排序顺序")
-    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="开始时间")
-    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="结束时间")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")
-    
-    # 创建索引
-    __table_args__ = (
-        Index('idx_recharge_activity_active', 'is_active'),
-        Index('idx_recharge_activity_sort', 'sort_order'),
-    )
-
-
-class BalanceTransaction(Base):
-    """余额变动记录表"""
-    __tablename__ = "balance_transactions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="记录ID")
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, comment="用户ID")
-    transaction_type: Mapped[str] = mapped_column(String(20), nullable=False, comment="交易类型：recharge-充值，consume-消费，refund-退款")
-    amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="变动金额（分）")
-    balance_before: Mapped[int] = mapped_column(Integer, nullable=False, comment="变动前余额（分）")
-    balance_after: Mapped[int] = mapped_column(Integer, nullable=False, comment="变动后余额（分）")
-    related_type: Mapped[Optional[str]] = mapped_column(String(20), comment="关联类型：recharge_order-充值订单，booking-预订")
-    related_id: Mapped[Optional[int]] = mapped_column(Integer, comment="关联ID")
-    description: Mapped[Optional[str]] = mapped_column(String(255), comment="变动说明")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
-    
-    # 关系
-    user = relationship("User", backref="balance_transactions")
-    
-    # 创建索引
-    __table_args__ = (
-        Index('idx_balance_user_id', 'user_id'),
-        Index('idx_balance_type', 'transaction_type'),
-        Index('idx_balance_created_at', 'created_at'),
-        Index('idx_balance_related', 'related_type', 'related_id'),
     )
 
 
@@ -401,97 +312,6 @@ class Review(Base):
         Index('idx_review_booking_id', 'booking_id'),
         Index('idx_review_rating', 'rating'),
         Index('idx_review_created_at', 'created_at'),
-    )
-
-
-class NotificationTypeEnum(str, Enum):
-    """通知类型枚举"""
-    BOOKING_REMINDER = "booking_reminder"  # 预订提醒
-    BOOKING_EXPIRED = "booking_expired"    # 预订到期
-    BOOKING_CANCELLED = "booking_cancelled"  # 预订取消
-
-
-class NotificationStatusEnum(str, Enum):
-    """通知状态枚举"""
-    PENDING = "pending"      # 待发送
-    SENT = "sent"           # 已发送
-    FAILED = "failed"       # 发送失败
-    RETRY = "retry"         # 重试中
-
-
-class BookingNotification(Base):
-    """预订通知表"""
-    __tablename__ = "booking_notifications"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="通知ID")
-    booking_id: Mapped[int] = mapped_column(Integer, ForeignKey("bookings.id"), nullable=False, comment="预订ID")
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, comment="用户ID")
-    notification_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="通知类型")
-    title: Mapped[str] = mapped_column(String(100), nullable=False, comment="通知标题")
-    content: Mapped[str] = mapped_column(Text, nullable=False, comment="通知内容")
-    status: Mapped[str] = mapped_column(String(20), default="pending", comment="通知状态")
-    send_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="发送时间")
-    retry_count: Mapped[int] = mapped_column(Integer, default=0, comment="重试次数")
-    max_retries: Mapped[int] = mapped_column(Integer, default=3, comment="最大重试次数")
-    error_message: Mapped[Optional[str]] = mapped_column(Text, comment="错误信息")
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否删除")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")
-    
-    # 关系
-    booking = relationship("Booking", backref="notifications")
-    user = relationship("User", backref="notifications")
-    
-    # 创建索引
-    __table_args__ = (
-        Index('idx_notification_booking_id', 'booking_id'),
-        Index('idx_notification_user_id', 'user_id'),
-        Index('idx_notification_type', 'notification_type'),
-        Index('idx_notification_status', 'status'),
-        Index('idx_notification_created_at', 'created_at'),
-        Index('idx_notification_deleted', 'is_deleted'),
-    )
-
-
-class ScheduledTaskStatusEnum(str, Enum):
-    """定时任务状态枚举"""
-    PENDING = "pending"      # 待执行
-    RUNNING = "running"      # 执行中
-    COMPLETED = "completed"  # 已完成
-    FAILED = "failed"        # 执行失败
-    CANCELLED = "cancelled"  # 已取消
-
-
-class ScheduledTask(Base):
-    """定时任务表"""
-    __tablename__ = "scheduled_tasks"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="任务ID")
-    task_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, comment="任务唯一标识")
-    task_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="任务类型")
-    related_type: Mapped[Optional[str]] = mapped_column(String(50), comment="关联类型")
-    related_id: Mapped[Optional[int]] = mapped_column(Integer, comment="关联ID")
-    title: Mapped[str] = mapped_column(String(100), nullable=False, comment="任务标题")
-    description: Mapped[Optional[str]] = mapped_column(Text, comment="任务描述")
-    scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="计划执行时间")
-    executed_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="实际执行时间")
-    status: Mapped[str] = mapped_column(String(20), default="pending", comment="任务状态")
-    result: Mapped[Optional[str]] = mapped_column(Text, comment="执行结果")
-    error_message: Mapped[Optional[str]] = mapped_column(Text, comment="错误信息")
-    retry_count: Mapped[int] = mapped_column(Integer, default=0, comment="重试次数")
-    max_retries: Mapped[int] = mapped_column(Integer, default=3, comment="最大重试次数")
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否删除")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), comment="创建时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")
-    
-    # 创建索引
-    __table_args__ = (
-        Index('idx_task_task_id', 'task_id'),
-        Index('idx_task_type', 'task_type'),
-        Index('idx_task_related', 'related_type', 'related_id'),
-        Index('idx_task_scheduled_time', 'scheduled_time'),
-        Index('idx_task_status', 'status'),
-        Index('idx_task_deleted', 'is_deleted'),
     )
 
 
